@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
+	<meta content="IE=edge" http-equiv="X-UA-Compatible" />
+	<meta content="width=device-width, initial-scale=1" name="viewport" />
+	<!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+	<title>Smart Pond System</title>
+	<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries --><!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+	<!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]--><!--
+      If you not using virtual host then you need to fix the js and css file path
+      Jika tidak menggunakan virtual host maka perbaiki file path untuk js dan css
+      contoh :  /js/angular.js
+                file:///E:/Program%20Files/wamp/www/geeknesia_sample_webapp/js/angular.js
+    -->
+	<script src="js/angular.js"></script>
+	<script src="js/Chart.js"></script>
+	<script src="js/angular-chart.js"></script>
+	<script src="js/angular-busy.js"></script>
+	<script src="js/angular-sanitize.js"></script>
+	<script src="js/ng-csv.min.js"></script>
+    <script src="js/jquery.min.js"></script>
+    <script src="js/jquery.chocolat.js"></script>
+	<script type="text/javascript" src="js/jquery-2.1.1.min.js"></script>
+	<script type="text/javascript" src="js/bootstrap.min.js"></script>
+	<script src="js/moment-with-locales.js"></script>
+	<script src="js/bootstrap-datetimepicker.js"></script>
+	<script type="text/javascript" charset="utf-8" src="phonegap.js"></script>
+	<link href="css/bootstrap.css" rel="stylesheet" />
+	<link href="css/angular-chart.css" rel="stylesheet" />
+	<link href="css/angular-busy.css" rel="stylesheet" />
+	<link href="css/bootstrap-datetimepicker.css" rel="stylesheet">
+</head>
+<body ng-app="formExample" style="text-align: center;">
+	<div class="container-fluid" ng-controller="ExampleController">
+		<h1 align="center">Smart Pond System Monitoring</h1>
+		<hr />
+		<div class="row">
+			<div class="col-md-4">
+				<div class="panel panel-info">
+					<div class="panel-heading">Sensor Data Feed<button filename="data.csv" ng-csv="exportCSV()" type="button">Export to CSV</button></div>
+					<div class="panel-body">
+						<table class="table table-stripped">
+							<tbody>
+								<tr>
+									<th>Date</th>
+									<th>Data</th>
+								</tr>
+								<tr ng-repeat="x in output.data">
+									<td>{{ x.datetime | date : &#39;d MMM yyyy H:mm:ss&#39;}}</td>
+									<td>{{ formatOutput(x.attributes) }}</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+
+			<div class="col-md-8">
+				<div class="panel panel-primary">
+					<div class="panel-heading">Setting for retrieving data</div>
+					<div cg-busy="{promise:myPromise2,message:'Retrieving Sensor Data'}"></div>
+					<div class="panel-body">
+						<form class="form-inline">
+							<div class="form-group"><!-- <label>Interval</label>
+								<input type="number" class="form-control" id="interval" placeholder="Interval" ng-model="interval" title="Interval in second"> --><label>Limit</label> <input class="form-control" id="limit" ng-model="limit" placeholder="Limit" type="number" /> <!-- label> <input id="filter" ng-model="filter" type="checkbox" value="datetime" /> Filter </label>
+
+								<div class="input-group date"><input class="form-control picker" ng-model="dateStart" placeholder="Date start" type="text" /> <span class="input-group-addon"> Start </span></div>
+
+								<div class="input-group date"><input class="form-control picker" ng-model="dateEnd" placeholder="Date end" type="text" id="date-end"/> <span class="input-group-addon"> End </span></div>
+								<br />
+								<br />
+								<button class="btn btn-default" id="submit" ng-click="getFeeds()" type="button">Retrieve</button>-->
+							</div>
+						</form>
+					</div>
+				</div>
+				<canvas class="chart chart-line" click="onClick" data="dataSeries" id="line" labels="labels" legend="true" series="series"> </canvas>
+			</div>
+		</div>
+	</div>
+<script>
+       $('.picker').datetimepicker({
+         format: 'YYYY-M-d H:mm:ss',
+         //onSelectDate: function(ct, $i) {
+         //  $(this).trigger('input');
+         //}
+       });
+    </script><script>
+      var myApp = angular.module('formExample', ["chart.js", 'cgBusy', 'ngSanitize', 'ngCsv']);
+      myApp.config(['$httpProvider', function($httpProvider) {
+                $httpProvider.defaults.useXDomain = true;
+                delete $httpProvider.defaults.headers.common['X-Requested-With'];
+            }
+        ]);
+
+      myApp.controller('ExampleController', ['$scope', '$http', '$interval', '$filter', function($scope, $http, $interval, $filter) {
+          // general variable with default value
+          $scope.url = 'http://api.geeknesia.com/api';
+          $scope.apiKey = '389a76627c802b1e4b9e2597ed78c891';
+          $scope.myPromise;
+          $scope.myPromise2;
+          $scope.myPromise3;
+          $scope.interval = 10; // 10 detik
+          $scope.action;
+
+          // getFeed response variable
+          $scope.output;
+          $scope.limit = 5;
+          $scope.filter = false;
+          //var d = moment().format('YYYY-M-d H:mm:ss');
+          $scope.dateStart = moment().format('YYYY-M-d H:mm:ss');
+          $scope.dateEnd = moment().format('YYYY-M-d H:mm:ss');
+
+          // graph variable
+          $scope.labels = [];
+          $scope.series = [];
+          $scope.dataSeries = [];
+          var emptyArray = [];
+
+          $scope.onClick = function (points, evt) {
+            console.log(points, evt);
+          };
+
+          // execute getFeed every 10 seconds
+          $interval(function() { $scope.getFeeds(); }, $scope.interval * 1000);
+
+          $scope.isValidJSON = function(str) {
+            try {
+                JSON.parse(str);
+            } catch (e) {
+                return false;
+            }
+            return true;
+          };
+
+          $scope.validateForm = function(device) {
+            if (typeof(device) != 'undefined') {
+              if (typeof(device.apiKey) == 'undefined' && typeof(device.attributes) == 'undefined' ) {
+                return false;
+              } else {
+                return true;
+              }
+            } else {
+              return false;
+            }
+          }
+
+          $scope.execute = function(device) {
+            if (this.validateForm(device) == false) {
+              alert('Fill all the fields');
+            } else {
+              if (this.isValidJSON(device.attributes)) {
+                $scope.myPromise = $http.get(this.url + '/data?attributes=' + device.attributes+'&api_key='+this.apiKey,
+                  {
+                    method:'GET',
+                    headers:{
+                      'Content-Type' : 'text/plain'
+                    }
+                  }
+                )
+                .success(function(data, status, headers, config) {
+                  console.log(data);
+                });
+              } else {
+                alert('Invalid format for attributes');
+              }
+            }
+          };
+
+          $scope.sendAction = function(action) {
+            $scope.myPromise3 = $http.get(this.url + '/control/' + action+'?api_key='+ this.apiKey,
+              {
+                method:'GET',
+                headers:{
+                  'Content-Type' : 'text/plain'
+                }
+              }
+            )
+            .success(function(data, status, headers, config) {
+              console.log(data);
+            });
+          };
+
+
+          $scope.getFeeds = function() {
+            //document.getElementById("date-end").value = moment().format('YYYY-M-d H:mm:ss');
+            if (this.apiKey == null) {
+              return false;
+            } else {
+              if ($scope.filter == true) {
+                var dataFilter = {
+                  'limit': $scope.limit,
+                  'filter': 'datetime',
+                  'from': $scope.dateStart,
+                  'to': $scope.dateEnd
+                };
+              } else {
+                var dataFilter = {
+                  'limit' : $scope.limit
+                };
+              }
+              $scope.myPromise2 = $http(
+                {
+                  url : this.url + '/attributes?api_key='+this.apiKey,
+                  method : 'POST',
+                  data : dataFilter,
+                  headers : {
+                    'Content-Type': 'application/json'
+                  }
+                }).success(function(data, status, headers, config) {
+                  console.log(data);
+                  $scope.output = data.output;
+                  $scope.formatGraph();
+                });
+            }
+          }
+
+          // formatting the getFeed response
+          $scope.formatOutput = function(str) {
+            var attributes = angular.fromJson(str);
+            var output = '';
+            angular.forEach(attributes, function(item) {
+              output += item.name + ' : ' + item.value + " ";
+            });
+            return output;
+          }
+
+          $scope.formatGraph = function() {
+            $scope.labels.length = 0;
+            emptyArray.length = 0;
+            $scope.dataSeries.length = 0;
+
+            //setup series (attributes)
+            $scope.series.length = 0;
+            if (typeof($scope.output.data[0]) == 'undefined') {
+              alert('No data retrieved. Please change the start and end date or uncheck the filter');
+              return;
+            }
+            var attributeLength = $scope.output.data[0].attributes.length;
+            emptyArray.length = 0;
+            for (var i = 0; i < attributeLength; i++) {
+              $scope.series.push($scope.output.data[0].attributes[i].name);
+              emptyArray.push([]);
+            };
+
+            angular.forEach($scope.output.data, function(item) {
+              $scope.labels.push($filter('date')(item.datetime, 'd MMM yyyy H:mm:ss'));
+
+              for (var i = 0; i < item.attributes.length; i++) {
+                emptyArray[i].push(item.attributes[i].value);
+              };
+            });
+            for (var i = 0; i < emptyArray.length; i++) {
+              $scope.dataSeries.push(emptyArray[i]);
+            }
+          }
+
+
+          $scope.exportCSV = function() {
+            // format data
+            var header = [];
+            header.push('timestamp');
+            angular.forEach($scope.series, function(item) {
+              header.push(item);
+            });
+
+            var data = [];
+            data.push(header);
+
+            // transpose the data
+            for (var i = 0; i < $scope.labels.length; i++) {
+              var emptyArray = [];
+              emptyArray.push($scope.labels[i]);
+              for(var j = 0; j < $scope.dataSeries.length; j++) {
+                emptyArray.push($scope.dataSeries[j][i]);
+              }
+              data.push(emptyArray);
+            }
+
+            return data;
+          }
+        }]);
+        
+
+        
+    </script>
+   </body>
+</html>
